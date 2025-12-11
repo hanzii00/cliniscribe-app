@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+import { useRouter } from 'next/navigation';
 
 interface User {
   id: number;
@@ -17,28 +16,37 @@ interface AuthTokens {
   user: User;
 }
 
-export default function AuthenticationPage() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+export default function AuthDemo() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
-  
+
+  // Login form state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  
+
+  // Register form state
   const [regUsername, setRegUsername] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regPassword2, setRegPassword2] = useState('');
 
-  const handleRegister = async (e: React.MouseEvent) => {
+  // REGISTER -------------------------------------------------------
+
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
+    if (regPassword !== regPassword2) {
+      setError('Passwords do not match.');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch(`${API_URL}/auth/register/`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/register/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -52,31 +60,39 @@ export default function AuthenticationPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.username?.[0] || data.email?.[0] || data.password?.[0] || 'Registration failed');
+        setError(
+          data.username?.[0] ||
+          data.email?.[0] ||
+          data.password?.[0] ||
+          'Registration failed'
+        );
         return;
       }
 
-      setError('');
-      alert('Registration successful! Please check your email to verify.');
+      alert('Registration successful! Check your email to verify.');
+
       setRegUsername('');
       setRegEmail('');
       setRegPassword('');
       setRegPassword2('');
       setActiveTab('login');
-    } catch (err) {
-      setError('Connection error');
+
+    } catch {
+      setError('Connection error.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogin = async (e: React.MouseEvent) => {
+  // LOGIN -------------------------------------------------------
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     try {
-      const res = await fetch(`${API_URL}/auth/login/`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -88,152 +104,148 @@ export default function AuthenticationPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError((data as any).error || 'Login failed');
+        setError(data.error || 'Login failed.');
         return;
       }
 
-      const authData = data as AuthTokens;
-      localStorage.setItem('access_token', authData.access);
-      localStorage.setItem('refresh_token', authData.refresh);
-      setUser(authData.user);
-      setIsLoggedIn(true);
-      setLoginEmail('');
-      setLoginPassword('');
-    } catch (err) {
-      setError('Connection error');
+      const auth = data as AuthTokens;
+
+      localStorage.setItem('access_token', auth.access);
+      localStorage.setItem('refresh_token', auth.refresh);
+
+      router.push('/main');
+
+    } catch {
+      setError('Connection error.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = async () => {
-    setLoading(true);
-    try {
-      const refreshToken = localStorage.getItem('refresh_token');
-      await fetch(`${API_URL}/auth/logout/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-        body: JSON.stringify({ refresh: refreshToken }),
-      });
-
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      setIsLoggedIn(false);
-      setUser(null);
-    } catch (err) {
-      setError('Logout failed');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // INPUT STYLE
+  const inputClass =
+    "w-full p-3 border border-gray-300 rounded-md bg-transparent " +
+    "text-gray-900 placeholder-gray-500 " +
+    "focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
-    <div style={{ maxWidth: '400px', margin: '50px auto', fontFamily: 'Arial' }}>
-      <h1>Auth Demo</h1>
+    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-md">
+        <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">Auth Demo</h1>
 
-      {isLoggedIn ? (
-        <div style={{ border: '1px solid green', padding: '20px', borderRadius: '8px' }}>
-          <h2>Welcome, {user?.username}!</h2>
-          <p><strong>Email:</strong> {user?.email}</p>
-          <p><strong>Verified:</strong> {user?.is_verified ? '✓ Yes' : '✗ No'}</p>
-          <button onClick={handleLogout} disabled={loading} style={{ width: '100%', padding: '10px', marginTop: '10px', cursor: 'pointer' }}>
-            {loading ? 'Logging out...' : 'Logout'}
-          </button>
-        </div>
-      ) : (
-        <div>
-          <div style={{ marginBottom: '20px' }}>
+        <div className="space-y-4">
+
+          {/* TAB BUTTONS */}
+          <div className="flex space-x-2">
             <button
               onClick={() => setActiveTab('login')}
-              style={{
-                padding: '10px 20px',
-                marginRight: '10px',
-                backgroundColor: activeTab === 'login' ? '#007bff' : '#ccc',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
+              className={`flex-1 py-2 rounded-md font-medium ${
+                activeTab === 'login'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-700'
+              }`}
             >
               Login
             </button>
+
             <button
               onClick={() => setActiveTab('register')}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: activeTab === 'register' ? '#28a745' : '#ccc',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-              }}
+              className={`flex-1 py-2 rounded-md font-medium ${
+                activeTab === 'register'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-700'
+              }`}
             >
               Register
             </button>
           </div>
 
-          {error && <div style={{ color: 'red', marginBottom: '10px', padding: '10px', backgroundColor: '#ffe6e6', borderRadius: '4px' }}>{error}</div>}
+          {error && (
+            <div className="p-3 bg-red-100 text-red-700 rounded-md">
+              {error}
+            </div>
+          )}
 
+          {/* LOGIN FORM */}
           {activeTab === 'login' ? (
-            <div>
+            <form onSubmit={handleLogin} className="space-y-4">
+
               <input
                 type="email"
                 placeholder="Email"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #ddd', boxSizing: 'border-box' }}
+                className={inputClass}
+                required
               />
+
               <input
                 type="password"
                 placeholder="Password"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
-                style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #ddd', boxSizing: 'border-box' }}
+                className={inputClass}
+                required
               />
-              <button onClick={handleLogin} disabled={loading} style={{ width: '100%', padding: '10px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                {loading ? 'Logging in...' : 'Login'}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition font-medium"
+              >
+                {loading ? "Logging in..." : "Login"}
               </button>
-            </div>
+            </form>
           ) : (
-            <div>
+            /* REGISTER FORM */
+            <form onSubmit={handleRegister} className="space-y-4">
               <input
                 type="text"
                 placeholder="Username"
                 value={regUsername}
                 onChange={(e) => setRegUsername(e.target.value)}
-                style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #ddd', boxSizing: 'border-box' }}
+                className={inputClass}
+                required
               />
+
               <input
                 type="email"
                 placeholder="Email"
                 value={regEmail}
                 onChange={(e) => setRegEmail(e.target.value)}
-                style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #ddd', boxSizing: 'border-box' }}
+                className={inputClass}
+                required
               />
+
               <input
                 type="password"
                 placeholder="Password"
                 value={regPassword}
                 onChange={(e) => setRegPassword(e.target.value)}
-                style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #ddd', boxSizing: 'border-box' }}
+                className={inputClass}
+                required
               />
+
               <input
                 type="password"
                 placeholder="Confirm Password"
                 value={regPassword2}
                 onChange={(e) => setRegPassword2(e.target.value)}
-                style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '4px', border: '1px solid #ddd', boxSizing: 'border-box' }}
+                className={inputClass}
+                required
               />
-              <button onClick={handleRegister} disabled={loading} style={{ width: '100%', padding: '10px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                {loading ? 'Registering...' : 'Register'}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition font-medium"
+              >
+                {loading ? "Registering..." : "Register"}
               </button>
-            </div>
+            </form>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
