@@ -16,6 +16,7 @@ interface DocumentsProps {
   onReprocess: () => Promise<void>;
   onDelete: (docId: number) => Promise<void>;
   onCorrectExtraction?: (extractionId: number, corrections: any) => Promise<void>;
+  showToast?: (message: string, type: 'error' | 'success') => void;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -44,6 +45,7 @@ export default function Documents({
   onReprocess,
   onDelete,
   onCorrectExtraction,
+  showToast,
 }: DocumentsProps) {
   const [showUpload, setShowUpload] = useState(false);
   const [title, setTitle] = useState('');
@@ -51,6 +53,7 @@ export default function Documents({
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState<ExtractedData | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [docxLoading, setDocxLoading] = useState(false);
 
   const handleUpload = async () => {
     if (title.trim() && text.trim()) {
@@ -77,18 +80,17 @@ export default function Documents({
 
   const handleSaveEdit = async () => {
     if (!editedData || !onCorrectExtraction || !selectedDocument) {
-      alert('Cannot save: Missing document or correction handler');
+      showToast?.('Cannot save: Missing document or correction handler', 'error');
       return;
     }
 
     try {
       setSaveLoading(true);
-      // Use document ID since we're saving the entire structured data
       await onCorrectExtraction(selectedDocument.id, editedData);
       setIsEditing(false);
     } catch (error) {
       console.error('Save failed:', error);
-      alert('Failed to save changes');
+      showToast?.('Failed to save changes', 'error');
     } finally {
       setSaveLoading(false);
     }
@@ -109,143 +111,249 @@ export default function Documents({
   };
 
   const handleDownloadAsWord = async () => {
-    if (!selectedDocument) return;
+    if (!selectedDocument) {
+      showToast?.('No document selected', 'error');
+      return;
+    }
+
+    if (!extractedData) {
+      showToast?.('No extracted data available. Please process the document first.', 'error');
+      return;
+    }
 
     try {
-      // Dynamic import to avoid SSR issues
-      const { Document: DocxDocument, Packer, Paragraph, TextRun, HeadingLevel } = await import('docx');
+      setDocxLoading(true);
+      
+      const { Document: DocxDocument, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import('docx');
       const { saveAs } = await import('file-saver');
 
-      // Create document sections
       const sections = [];
 
-      // Title
       sections.push(
         new Paragraph({
           text: selectedDocument.title,
           heading: HeadingLevel.HEADING_1,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 300 },
         })
       );
 
-      // Original text
       sections.push(
         new Paragraph({
-          text: 'Original Note:',
+          text: `Generated: ${new Date().toLocaleString()}`,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 200 },
+        })
+      );
+
+      sections.push(
+        new Paragraph({
+          text: `Document ID: ${selectedDocument.id}`,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 400 },
+        })
+      );
+
+      sections.push(
+        new Paragraph({
+          text: 'Original Nursing Note',
           heading: HeadingLevel.HEADING_2,
+          spacing: { before: 200, after: 200 },
         })
       );
       sections.push(
         new Paragraph({
           text: selectedDocument.original_text,
+          spacing: { after: 400 },
         })
       );
 
-      // Add extracted data if available
-      if (extractedData) {
+      sections.push(
+        new Paragraph({
+          text: 'Extracted Structured Data',
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 400, after: 200 },
+        })
+      );
+
+      if (extractedData.vital_signs && Object.keys(extractedData.vital_signs).length > 0) {
         sections.push(
           new Paragraph({
-            text: '',
+            text: 'Vital Signs',
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 200, after: 100 },
           })
         );
-        sections.push(
-          new Paragraph({
-            text: 'Extracted Data:',
-            heading: HeadingLevel.HEADING_2,
-          })
-        );
-
-        // Vital Signs
-        if (extractedData.vital_signs && Object.keys(extractedData.vital_signs).length > 0) {
+        
+        if (extractedData.vital_signs.blood_pressure) {
           sections.push(
             new Paragraph({
-              text: 'Vital Signs',
-              heading: HeadingLevel.HEADING_3,
+              children: [
+                new TextRun({ text: 'Blood Pressure: ', bold: true }),
+                new TextRun({ text: extractedData.vital_signs.blood_pressure }),
+              ],
+              spacing: { after: 100 },
             })
           );
-          if (extractedData.vital_signs.blood_pressure) {
-            sections.push(new Paragraph({ text: `Blood Pressure: ${extractedData.vital_signs.blood_pressure}` }));
-          }
-          if (extractedData.vital_signs.heart_rate) {
-            sections.push(new Paragraph({ text: `Heart Rate: ${extractedData.vital_signs.heart_rate} bpm` }));
-          }
-          if (extractedData.vital_signs.respiratory_rate) {
-            sections.push(new Paragraph({ text: `Respiratory Rate: ${extractedData.vital_signs.respiratory_rate} /min` }));
-          }
-          if (extractedData.vital_signs.temperature) {
-            sections.push(new Paragraph({ text: `Temperature: ${extractedData.vital_signs.temperature}°C` }));
-          }
-          if (extractedData.vital_signs.oxygen_saturation) {
-            sections.push(new Paragraph({ text: `O2 Saturation: ${extractedData.vital_signs.oxygen_saturation}%` }));
-          }
         }
-
-        // Symptoms
-        if (extractedData.symptoms && extractedData.symptoms.length > 0) {
+        if (extractedData.vital_signs.heart_rate) {
           sections.push(
             new Paragraph({
-              text: 'Symptoms',
-              heading: HeadingLevel.HEADING_3,
+              children: [
+                new TextRun({ text: 'Heart Rate: ', bold: true }),
+                new TextRun({ text: `${extractedData.vital_signs.heart_rate} bpm` }),
+              ],
+              spacing: { after: 100 },
             })
           );
-          extractedData.symptoms.forEach((symptom) => {
-            sections.push(new Paragraph({ text: `• ${symptom}` }));
-          });
         }
-
-        // Pain Assessment
-        if (extractedData.pain_level !== null && extractedData.pain_level !== undefined) {
+        if (extractedData.vital_signs.respiratory_rate) {
           sections.push(
             new Paragraph({
-              text: 'Pain Assessment',
-              heading: HeadingLevel.HEADING_3,
+              children: [
+                new TextRun({ text: 'Respiratory Rate: ', bold: true }),
+                new TextRun({ text: `${extractedData.vital_signs.respiratory_rate} /min` }),
+              ],
+              spacing: { after: 100 },
             })
           );
-          sections.push(new Paragraph({ text: `Pain Level: ${extractedData.pain_level}/10` }));
-          if (extractedData.pain_location) {
-            sections.push(new Paragraph({ text: `Location: ${extractedData.pain_location}` }));
-          }
         }
-
-        // Neurological
-        if (extractedData.consciousness_level) {
+        if (extractedData.vital_signs.temperature) {
           sections.push(
             new Paragraph({
-              text: 'Neurological',
-              heading: HeadingLevel.HEADING_3,
+              children: [
+                new TextRun({ text: 'Temperature: ', bold: true }),
+                new TextRun({ text: `${extractedData.vital_signs.temperature}°C` }),
+              ],
+              spacing: { after: 100 },
             })
           );
-          sections.push(new Paragraph({ text: `Consciousness: ${extractedData.consciousness_level}` }));
-          if (extractedData.orientation) {
-            sections.push(new Paragraph({ text: `Orientation: ${extractedData.orientation}` }));
-          }
         }
-
-        // Mobility
-        if (extractedData.mobility_status) {
+        if (extractedData.vital_signs.oxygen_saturation) {
           sections.push(
             new Paragraph({
-              text: 'Mobility',
-              heading: HeadingLevel.HEADING_3,
+              children: [
+                new TextRun({ text: 'O2 Saturation: ', bold: true }),
+                new TextRun({ text: `${extractedData.vital_signs.oxygen_saturation}%` }),
+              ],
+              spacing: { after: 100 },
             })
           );
-          sections.push(new Paragraph({ text: extractedData.mobility_status }));
-        }
-
-        // Interventions
-        if (extractedData.interventions && extractedData.interventions.length > 0) {
-          sections.push(
-            new Paragraph({
-              text: 'Interventions',
-              heading: HeadingLevel.HEADING_3,
-            })
-          );
-          extractedData.interventions.forEach((intervention) => {
-            sections.push(new Paragraph({ text: `• ${intervention}` }));
-          });
         }
       }
 
-      // Create the document
+      if (extractedData.symptoms && extractedData.symptoms.length > 0) {
+        sections.push(
+          new Paragraph({
+            text: 'Symptoms',
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 200, after: 100 },
+          })
+        );
+        extractedData.symptoms.forEach((symptom) => {
+          sections.push(
+            new Paragraph({
+              text: `• ${symptom}`,
+              spacing: { after: 100 },
+            })
+          );
+        });
+      }
+
+      if (extractedData.pain_level !== null && extractedData.pain_level !== undefined) {
+        sections.push(
+          new Paragraph({
+            text: 'Pain Assessment',
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 200, after: 100 },
+          })
+        );
+        sections.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: 'Pain Level: ', bold: true }),
+              new TextRun({ text: `${extractedData.pain_level}/10` }),
+            ],
+            spacing: { after: 100 },
+          })
+        );
+        if (extractedData.pain_location) {
+          sections.push(
+            new Paragraph({
+              children: [
+                new TextRun({ text: 'Location: ', bold: true }),
+                new TextRun({ text: extractedData.pain_location }),
+              ],
+              spacing: { after: 100 },
+            })
+          );
+        }
+      }
+
+      if (extractedData.consciousness_level) {
+        sections.push(
+          new Paragraph({
+            text: 'Neurological Assessment',
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 200, after: 100 },
+          })
+        );
+        sections.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: 'Consciousness: ', bold: true }),
+              new TextRun({ text: extractedData.consciousness_level }),
+            ],
+            spacing: { after: 100 },
+          })
+        );
+        if (extractedData.orientation) {
+          sections.push(
+            new Paragraph({
+              children: [
+                new TextRun({ text: 'Orientation: ', bold: true }),
+                new TextRun({ text: extractedData.orientation }),
+              ],
+              spacing: { after: 100 },
+            })
+          );
+        }
+      }
+
+      if (extractedData.mobility_status) {
+        sections.push(
+          new Paragraph({
+            text: 'Mobility Status',
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 200, after: 100 },
+          })
+        );
+        sections.push(
+          new Paragraph({
+            text: extractedData.mobility_status,
+            spacing: { after: 100 },
+          })
+        );
+      }
+
+      if (extractedData.interventions && extractedData.interventions.length > 0) {
+        sections.push(
+          new Paragraph({
+            text: 'Interventions Performed',
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 200, after: 100 },
+          })
+        );
+        extractedData.interventions.forEach((intervention) => {
+          sections.push(
+            new Paragraph({
+              text: `• ${intervention}`,
+              spacing: { after: 100 },
+            })
+          );
+        });
+      }
+
       const doc = new DocxDocument({
         sections: [
           {
@@ -255,12 +363,15 @@ export default function Documents({
         ],
       });
 
-      // Generate and download
       const blob = await Packer.toBlob(doc);
       saveAs(blob, `${selectedDocument.title}.docx`);
+      showToast?.('Word document generated successfully!', 'success');
+      
     } catch (error) {
       console.error('Failed to generate Word document:', error);
-      alert('Failed to generate Word document. Please try again.');
+      showToast?.('Failed to generate Word document. Please ensure docx and file-saver packages are installed.', 'error');
+    } finally {
+      setDocxLoading(false);
     }
   };
 
@@ -306,7 +417,7 @@ export default function Documents({
                 </button>
                 <button
                   onClick={() => setShowUpload(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-900 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -335,8 +446,8 @@ export default function Documents({
                   <StatusBadge status={doc.status} />
                 </div>
                 <h3 className="font-semibold text-gray-900 text-sm mb-1">{doc.title}</h3>
-                <p className="text-xs text-gray-600 line-clamp-2 mb-2">{doc.original_text}</p>
-                <div className="flex items-center justify-between text-xs text-gray-500">
+                <p className="text-xs text-gray-900 line-clamp-2 mb-2">{doc.original_text}</p>
+                <div className="flex items-center justify-between text-xs text-gray-900">
                   <div className="flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     {new Date(doc.created_at).toLocaleDateString()}
@@ -364,13 +475,13 @@ export default function Documents({
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{selectedDocument.title}</h2>
-                <p className="text-sm text-gray-600 mt-1">{selectedDocument.original_text}</p>
+                <p className="text-sm text-gray-900 mt-1">{selectedDocument.original_text}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {extractedData && !isEditing && (
                   <button
                     onClick={() => setIsEditing(true)}
-                    className="px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2"
+                    className="px-3 py-2 border border-gray-300 text-gray-900 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2"
                   >
                     <Edit className="w-4 h-4" />
                     Edit
@@ -394,16 +505,25 @@ export default function Documents({
                         }
                       }}
                       disabled={saveLoading}
-                      className="px-3 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                      className="px-3 py-2 border border-gray-300 text-gray-900 bg-white rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
                     >
                       Cancel
                     </button>
                   </>
                 )}
                 <button
+                  onClick={handleDownloadAsWord}
+                  disabled={loading || isEditing || docxLoading || !extractedData}
+                  className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={!extractedData ? "Process document first to enable Word export" : "Download as Word document"}
+                >
+                  <FileDown className="w-4 h-4" />
+                  {docxLoading ? 'Generating...' : 'Word'}
+                </button>
+                <button
                   onClick={() => onExport('json')}
                   disabled={loading || isEditing}
-                  className="px-3 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-2 border border-gray-300 text-gray-900 bg-white rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Download className="w-4 h-4" />
                   JSON
@@ -411,7 +531,7 @@ export default function Documents({
                 <button
                   onClick={() => onExport('csv')}
                   disabled={loading || isEditing}
-                  className="px-3 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-2 border border-gray-300 text-gray-900 bg-white rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Download className="w-4 h-4" />
                   CSV
@@ -444,31 +564,31 @@ export default function Documents({
                         {extractedData.vital_signs?.blood_pressure && (
                           <div>
                             <p className="text-xs text-gray-500">Blood Pressure</p>
-                            <p className="text-sm font-medium">{extractedData.vital_signs.blood_pressure}</p>
+                            <p className="text-sm font-medium text-gray-900">{extractedData.vital_signs.blood_pressure}</p>
                           </div>
                         )}
                         {extractedData.vital_signs?.heart_rate && (
                           <div>
                             <p className="text-xs text-gray-500">Heart Rate</p>
-                            <p className="text-sm font-medium">{extractedData.vital_signs.heart_rate} bpm</p>
+                            <p className="text-sm font-medium text-gray-900">{extractedData.vital_signs.heart_rate} bpm</p>
                           </div>
                         )}
                         {extractedData.vital_signs?.respiratory_rate && (
                           <div>
                             <p className="text-xs text-gray-500">Respiratory Rate</p>
-                            <p className="text-sm font-medium">{extractedData.vital_signs.respiratory_rate} /min</p>
+                            <p className="text-sm font-medium text-gray-900">{extractedData.vital_signs.respiratory_rate} /min</p>
                           </div>
                         )}
                         {extractedData.vital_signs?.temperature && (
                           <div>
                             <p className="text-xs text-gray-500">Temperature</p>
-                            <p className="text-sm font-medium">{extractedData.vital_signs.temperature}°C</p>
+                            <p className="text-sm font-medium text-gray-900">{extractedData.vital_signs.temperature}°C</p>
                           </div>
                         )}
                         {extractedData.vital_signs?.oxygen_saturation && (
                           <div>
                             <p className="text-xs text-gray-500">O2 Saturation</p>
-                            <p className="text-sm font-medium">{extractedData.vital_signs.oxygen_saturation}%</p>
+                            <p className="text-sm font-medium text-gray-900">{extractedData.vital_signs.oxygen_saturation}%</p>
                           </div>
                         )}
                       </div>
@@ -596,12 +716,12 @@ export default function Documents({
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <p className="text-xs text-gray-500">Pain Level</p>
-                        <p className="text-sm font-medium">{extractedData.pain_level}/10</p>
+                        <p className="text-sm font-medium text-gray-900">{extractedData.pain_level}/10</p>
                       </div>
                       {extractedData.pain_location && (
                         <div>
                           <p className="text-xs text-gray-500">Location</p>
-                          <p className="text-sm font-medium">{extractedData.pain_location}</p>
+                          <p className="text-sm font-medium text-gray-900">{extractedData.pain_location}</p>
                         </div>
                       )}
                     </div>
@@ -615,12 +735,12 @@ export default function Documents({
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <p className="text-xs text-gray-500">Consciousness</p>
-                        <p className="text-sm font-medium">{extractedData.consciousness_level}</p>
+                        <p className="text-sm font-medium text-gray-900">{extractedData.consciousness_level}</p>
                       </div>
                       {extractedData.orientation && (
                         <div>
                           <p className="text-xs text-gray-500">Orientation</p>
-                          <p className="text-sm font-medium">{extractedData.orientation}</p>
+                          <p className="text-sm font-medium text-gray-900">{extractedData.orientation}</p>
                         </div>
                       )}
                     </div>
@@ -631,7 +751,7 @@ export default function Documents({
                 {extractedData.mobility_status && (
                   <div className="border border-gray-200 rounded-lg p-4">
                     <h3 className="font-semibold text-gray-900 mb-3">Mobility</h3>
-                    <p className="text-sm font-medium">{extractedData.mobility_status}</p>
+                    <p className="text-sm font-medium text-gray-900">{extractedData.mobility_status}</p>
                   </div>
                 )}
 
