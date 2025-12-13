@@ -2,12 +2,58 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, FileText, Upload, CheckCircle, XCircle, BarChart3 } from 'lucide-react';
+import { AlertCircle, FileText, Upload, CheckCircle, XCircle, BarChart3, X } from 'lucide-react';
 import QuickExtract from '@/components/QuickExtract';
 import Documents from '@/components/Documents';
 import Statistics from '@/components/Statistics';
 import UserMenu from '@/components/UserMenu';
 import { ApiService, Document, ExtractedData } from '@/lib/api';
+
+// Toast Component
+const Toast = ({ message, type, onClose }: { message: string; type: 'error' | 'success'; onClose: () => void }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const styles = type === 'error' 
+    ? 'bg-red-50 border-red-200 text-red-900'
+    : 'bg-green-50 border-green-200 text-green-900';
+  
+  const Icon = type === 'error' ? AlertCircle : CheckCircle;
+  const iconColor = type === 'error' ? 'text-red-600' : 'text-green-600';
+
+  return (
+    <div className={`${styles} border rounded-lg p-4 shadow-lg flex items-start gap-3 min-w-[320px] max-w-md animate-slide-in`}>
+      <Icon className={`w-5 h-5 ${iconColor} flex-shrink-0 mt-0.5`} />
+      <div className="flex-1">
+        <h3 className="font-medium">{type === 'error' ? 'Error' : 'Success'}</h3>
+        <p className="text-sm mt-0.5">{message}</p>
+      </div>
+      <button onClick={onClose} className={`${iconColor} hover:opacity-70 transition`}>
+        <X className="w-5 h-5" />
+      </button>
+    </div>
+  );
+};
+
+// Toast Container Component
+const ToastContainer = ({ toasts, onRemove }: { toasts: Array<{ id: number; message: string; type: 'error' | 'success' }>; onRemove: (id: number) => void }) => {
+  return (
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-3">
+      {toasts.map((toast) => (
+        <Toast
+          key={toast.id}
+          message={toast.message}
+          type={toast.type}
+          onClose={() => onRemove(toast.id)}
+        />
+      ))}
+    </div>
+  );
+};
 
 export default function N2SDCPage() {
   const [currentView, setCurrentView] = useState<'quick-extract' | 'documents' | 'statistics'>('quick-extract');
@@ -15,8 +61,22 @@ export default function N2SDCPage() {
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'error' | 'success' }>>([]);
+  const [toastIdCounter, setToastIdCounter] = useState(0);
+
+  // Toast helpers
+  const showToast = (message: string, type: 'error' | 'success') => {
+    const id = toastIdCounter;
+    setToastIdCounter(prev => prev + 1);
+    setToasts(prev => [...prev, { id, message, type }]);
+  };
+
+  const removeToast = (id: number) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
+
+  const showError = (message: string) => showToast(message, 'error');
+  const showSuccess = (message: string) => showToast(message, 'success');
 
   // ------------------ API Handlers ------------------
   const loadDocuments = async () => {
@@ -24,9 +84,8 @@ export default function N2SDCPage() {
       setLoading(true);
       const docs = await ApiService.getDocuments();
       setDocuments(docs);
-      setError(null);
     } catch (err: any) {
-      setError(err.message);
+      showError(err.message);
     } finally {
       setLoading(false);
     }
@@ -35,12 +94,11 @@ export default function N2SDCPage() {
   const handleQuickExtract = async (text: string) => {
     try {
       setLoading(true);
-      setError(null);
       const result = await ApiService.quickExtract(text);
       setExtractedData(result);
-      setSuccess('Extraction completed successfully!');
+      showSuccess('Extraction completed successfully!');
     } catch (err: any) {
-      setError(err.message);
+      showError(err.message);
       setExtractedData(null);
     } finally {
       setLoading(false);
@@ -50,13 +108,12 @@ export default function N2SDCPage() {
   const handleUploadDocument = async (title: string, text: string) => {
     try {
       setLoading(true);
-      setError(null);
       const newDoc = await ApiService.uploadDocument(title, text);
-      setSuccess('Document uploaded successfully!');
+      showSuccess('Document uploaded successfully!');
       await loadDocuments();
       await handleViewDocument(newDoc);
     } catch (err: any) {
-      setError(err.message);
+      showError(err.message);
     } finally {
       setLoading(false);
     }
@@ -65,12 +122,11 @@ export default function N2SDCPage() {
   const handleViewDocument = async (doc: Document) => {
     try {
       setLoading(true);
-      setError(null);
       setSelectedDocument(doc);
       const structuredData = await ApiService.getStructuredData(doc.id);
       setExtractedData(structuredData);
     } catch (err: any) {
-      setError(err.message);
+      showError(err.message);
       setExtractedData(null);
     } finally {
       setLoading(false);
@@ -80,15 +136,14 @@ export default function N2SDCPage() {
   const handleCorrectExtraction = async (documentId: number, corrections: any) => {
     try {
       setLoading(true);
-      setError(null);
       await ApiService.updateStructuredData(documentId, corrections);
-      setSuccess('Changes saved successfully!');
+      showSuccess('Changes saved successfully!');
       if (selectedDocument) {
         const structuredData = await ApiService.getStructuredData(selectedDocument.id);
         setExtractedData(structuredData);
       }
     } catch (err: any) {
-      setError(err.message);
+      showError(err.message);
       throw err;
     } finally {
       setLoading(false);
@@ -98,13 +153,12 @@ export default function N2SDCPage() {
   const handleSaveAsDocument = async (title: string, text: string) => {
     try {
       setLoading(true);
-      setError(null);
       await ApiService.uploadDocument(title, text);
-      setSuccess('Document saved successfully!');
+      showSuccess('Document saved successfully!');
       await loadDocuments();
       setCurrentView('documents');
     } catch (err: any) {
-      setError(err.message);
+      showError(err.message);
     } finally {
       setLoading(false);
     }
@@ -123,9 +177,9 @@ export default function N2SDCPage() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      setSuccess('Document exported successfully!');
+      showSuccess('Document exported successfully!');
     } catch (err: any) {
-      setError(err.message);
+      showError(err.message);
     } finally {
       setLoading(false);
     }
@@ -135,31 +189,65 @@ export default function N2SDCPage() {
     if (!selectedDocument) return;
     try {
       setLoading(true);
-      setError(null);
       await ApiService.reprocessDocument(selectedDocument.id);
-      setSuccess('Document reprocessing started!');
+      showSuccess('Document reprocessing started!');
       await handleViewDocument(selectedDocument);
     } catch (err: any) {
-      setError(err.message);
+      showError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteDocument = async (docId: number) => {
-    if (!confirm('Are you sure you want to delete this document?')) return;
+    if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
+      return;
+    }
 
     try {
       setLoading(true);
+      
       if (selectedDocument?.id === docId) {
         setSelectedDocument(null);
         setExtractedData(null);
       }
+      
       await ApiService.deleteDocument(docId);
-      setSuccess('Document deleted successfully!');
-      await loadDocuments();
+      setDocuments(prevDocs => prevDocs.filter(d => d.id !== docId));
+      showSuccess('Document deleted successfully!');
+      
     } catch (err: any) {
-      setError(err.message);
+      console.error('Delete document error:', err);
+      
+      if (err.response?.status === 404) {
+        showError('Document not found. It may have been already deleted. Refreshing list...');
+        
+        try {
+          await loadDocuments();
+          
+          if (selectedDocument?.id === docId) {
+            setSelectedDocument(null);
+            setExtractedData(null);
+          }
+        } catch (refreshError) {
+          console.error('Failed to refresh documents:', refreshError);
+          showError('Document not found and failed to refresh list. Please reload the page.');
+        }
+      }
+      else if (err.response?.status === 403) {
+        showError('You do not have permission to delete this document.');
+      }
+      else if (err.response?.status === 401) {
+        showError('Your session has expired. Please log in again.');
+        setTimeout(() => {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          window.location.href = '/authentication';
+        }, 2000);
+      }
+      else {
+        showError(err.message || 'Failed to delete document. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -169,7 +257,6 @@ export default function N2SDCPage() {
     try {
       const refreshToken = localStorage.getItem('refresh_token');
       
-      // If no refresh token, just clear storage and redirect
       if (!refreshToken) {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
@@ -185,7 +272,6 @@ export default function N2SDCPage() {
         body: JSON.stringify({ refresh: refreshToken }),
       });
 
-      // Always clear tokens and redirect, even if the request fails
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       
@@ -197,7 +283,6 @@ export default function N2SDCPage() {
       window.location.href = '/authentication';
     } catch (err: any) {
       console.error('Logout error:', err);
-      // Still clear tokens and redirect on error
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       window.location.href = '/authentication';
@@ -212,6 +297,9 @@ export default function N2SDCPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
@@ -223,7 +311,6 @@ export default function N2SDCPage() {
             </div>
           </div>
           
-          {/* User Menu (Hamburger) */}
           <UserMenu onLogout={handleLogout} />
         </div>
       </header>
@@ -259,35 +346,6 @@ export default function N2SDCPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Error Alert */}
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-medium text-red-900">Error</h3>
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-            <button onClick={() => setError(null)} className="ml-auto text-red-600 hover:text-red-800">
-              <XCircle className="w-5 h-5" />
-            </button>
-          </div>
-        )}
-
-        {/* Success Alert */}
-        {success && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-medium text-green-900">Success</h3>
-              <p className="text-sm text-green-700">{success}</p>
-            </div>
-            <button onClick={() => setSuccess(null)} className="ml-auto text-green-600 hover:text-green-800">
-              <XCircle className="w-5 h-5" />
-            </button>
-          </div>
-        )}
-
-        {/* Views */}
         {currentView === 'quick-extract' && (
           <QuickExtract
             onExtract={handleQuickExtract}
@@ -312,6 +370,7 @@ export default function N2SDCPage() {
         )}
         {currentView === 'statistics' && <Statistics />}
       </main>
+
     </div>
   );
 }

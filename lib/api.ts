@@ -80,10 +80,24 @@ export class ApiService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `API Error: ${response.statusText}`);
+      const error: any = new Error(errorData.message || `API Error: ${response.statusText}`);
+      error.response = response;
+      error.data = errorData;
+      throw error;
     }
 
-    return response.json();
+    // Handle 204 No Content (common for DELETE requests)
+    if (response.status === 204) {
+      return null;
+    }
+
+    // Check if response has content
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return response.json();
+    }
+
+    return null;
   }
 
   static async getProfile(): Promise<UserProfile> {
@@ -129,9 +143,6 @@ export class ApiService {
       method: 'POST',
       body: JSON.stringify({ text }),
     });
-    
-    // Backend returns { success: true, extracted_data: {...}, ... }
-    // We need to extract just the extracted_data object
     console.log('Quick extract response:', response);
     
     if (response.success && response.extracted_data) {
@@ -183,8 +194,22 @@ export class ApiService {
   }
 
   static async deleteDocument(documentId: number): Promise<void> {
-    return this.request(`/nlp/documents/${documentId}/`, {
+    await this.request(`/nlp/documents/${documentId}/`, {
       method: 'DELETE',
     });
+    // Returns void, no need to return anything
   }
 }
+
+export const uploadDocument = (title: string, text: string) => ApiService.uploadDocument(title, text);
+export const getDocuments = () => ApiService.getDocuments();
+export const getDocument = (id: number) => ApiService.getDocument(id);
+export const getExtractions = (documentId: number) => ApiService.getExtractions(documentId);
+export const getStructuredData = (documentId: number) => ApiService.getStructuredData(documentId);
+export const quickExtract = (text: string) => ApiService.quickExtract(text);
+export const correctExtraction = (extractionId: number, corrections: any) => ApiService.correctExtraction(extractionId, corrections);
+export const exportDocument = (documentId: number, format: string) => ApiService.exportDocument(documentId, format);
+export const reprocessDocument = (documentId: number) => ApiService.reprocessDocument(documentId);
+export const getFeedbackStatistics = () => ApiService.getFeedbackStatistics();
+export const updateStructuredData = (documentId: number, data: any) => ApiService.updateStructuredData(documentId, data);
+export const deleteDocument = (documentId: number) => ApiService.deleteDocument(documentId);
