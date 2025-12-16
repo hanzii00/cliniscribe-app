@@ -35,13 +35,25 @@ export default function QuickExtract({ onExtract, extractedData, loading, onSave
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [documentTitle, setDocumentTitle] = useState('');
 
-  // Normalize the data for display
-  const displayData = extractedData ? {
-    ...extractedData,
-    vital_signs: extractedData.vital_signs || extractedData.vitals || {},
-    consciousness_level: extractedData.consciousness_level || extractedData.consciousness,
-    mobility_status: extractedData.mobility_status || extractedData.mobility,
-  } : null;
+const displayData = extractedData ? {
+  vital_signs: {
+    blood_pressure: extractedData.vital_signs?.blood_pressure || extractedData.vitals?.bp,
+    heart_rate: extractedData.vital_signs?.heart_rate || extractedData.vitals?.hr,
+    respiratory_rate: extractedData.vital_signs?.respiratory_rate || extractedData.vitals?.rr,
+    temperature: extractedData.vital_signs?.temperature || extractedData.vitals?.temp,
+    oxygen_saturation: extractedData.vital_signs?.oxygen_saturation || extractedData.vitals?.spo2,
+  },
+  consciousness_level: extractedData.consciousness_level || extractedData.consciousness,
+  mobility_status: extractedData.mobility_status || extractedData.mobility,
+  orientation: extractedData.orientation,
+  pain_level: extractedData.pain_level,
+  pain_location: extractedData.pain_location,
+  interventions: extractedData.interventions || [],
+  symptoms: extractedData.symptoms?.map((s: any) => 
+    typeof s === 'string' ? s : s.value
+  ) || []
+} : null;
+
 
   const handleSaveAsDocument = async () => {
     if (documentTitle.trim() && text.trim() && onSaveAsDocument) {

@@ -11,11 +11,19 @@ export interface Document {
 }
 
 export interface VitalSigns {
+  // Long key names (preferred)
   blood_pressure?: string;
-  heart_rate?: number;
-  respiratory_rate?: number;
-  temperature?: number;
-  oxygen_saturation?: number;
+  heart_rate?: string;
+  respiratory_rate?: string;
+  temperature?: string;
+  oxygen_saturation?: string;
+  
+  // Short key names (for backward compatibility)
+  bp?: string;
+  hr?: string;
+  rr?: string;
+  temp?: string;
+  spo2?: string;
 }
 
 export interface ExtractedData {
