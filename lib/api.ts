@@ -1,4 +1,4 @@
-// lib/api.ts
+// lib/api.ts - Updated with complete interfaces
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 export interface Document {
@@ -11,37 +11,58 @@ export interface Document {
 }
 
 export interface VitalSigns {
-  // Long key names (preferred)
-  blood_pressure?: string;
-  heart_rate?: string;
-  respiratory_rate?: string;
-  temperature?: string;
-  oxygen_saturation?: string;
-  
-  // Short key names (for backward compatibility)
-  bp?: string;
-  hr?: string;
-  rr?: string;
-  temp?: string;
-  spo2?: string;
+  blood_pressure?: string | number;
+  heart_rate?: string | number;
+  respiratory_rate?: string | number;
+  temperature?: string | number;
+  oxygen_saturation?: string | number;
+  bp?: string | number;
+  hr?: string | number;
+  rr?: string | number;
+  temp?: string | number;
+  spo2?: string | number;
+}
+
+export interface PatientInfo {
+  name?: string;
+  age?: string | number;
+  gender?: string;
+  patient_id?: string;
+  room_number?: string;
+  admission_date?: string;
+  diagnosis?: string;
+  [key: string]: any; // Allow additional fields
+}
+
+export interface Medication {
+  name?: string;
+  dosage?: string;
+  route?: string;
+  frequency?: string;
+  time?: string;
+  [key: string]: any; // Allow additional fields
 }
 
 export interface ExtractedData {
   id?: number;
   document?: number;
+  patient_info?: PatientInfo;
   vital_signs?: VitalSigns;
-  vitals?: VitalSigns; // Backend uses this
+  vitals?: VitalSigns;
+  medications?: Medication[];
   symptoms?: string[];
   pain_level?: number;
   pain_location?: string;
   consciousness_level?: string;
-  consciousness?: string; // Backend uses this
+  consciousness?: string;
   orientation?: string;
   mobility_status?: string;
-  mobility?: string; // Backend uses this
+  mobility?: string;
+  assessments?: string[];
   interventions?: string[];
   is_verified?: boolean;
   created_at?: string;
+  [key: string]: any; // Allow additional fields from backend
 }
 
 export interface Statistics {
@@ -61,6 +82,57 @@ export interface UserProfile {
   is_verified?: boolean;
   is_active?: boolean;
   date_joined?: string;
+}
+
+// ==================== OCR INTERFACES ====================
+export interface OCRResult {
+  success: boolean;
+  extracted_text?: string;
+  confidence?: number;
+  metadata?: {
+    original_size: [number, number];
+    original_mode: string;
+    preprocessed: boolean;
+    language: string;
+    word_count: number;
+    character_count: number;
+  };
+  quality_indicators?: {
+    confidence_level: 'high' | 'medium' | 'low';
+    needs_review: boolean;
+    text_detected: boolean;
+  };
+  validation_warnings?: string[];
+  error?: string;
+}
+
+export interface OCRProcessResult {
+  status: string;
+  document?: Document;
+  ocr_metadata?: {
+    confidence: number;
+    quality: {
+      confidence_level: string;
+      needs_review: boolean;
+      text_detected: boolean;
+    };
+    text_length: number;
+  };
+  extraction_count?: number;
+  error?: string;
+  validation_warnings?: string[];
+}
+
+export interface BatchOCRResult {
+  total_processed: number;
+  successful: number;
+  failed: number;
+  results: Array<{
+    success: boolean;
+    document_id?: number;
+    confidence?: number;
+    error?: string;
+  }>;
 }
 
 export class ApiService {
@@ -94,12 +166,10 @@ export class ApiService {
       throw error;
     }
 
-    // Handle 204 No Content (common for DELETE requests)
     if (response.status === 204) {
       return null;
     }
 
-    // Check if response has content
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
       return response.json();
@@ -108,6 +178,79 @@ export class ApiService {
     return null;
   }
 
+  // ==================== OCR ENDPOINTS ====================
+  
+  static async ocrExtract(imageFile: File, preprocess: boolean = true): Promise<OCRResult> {
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    formData.append('preprocess', preprocess.toString());
+
+    const response = await fetch(`${API_BASE_URL}/nlp/documents/ocr_extract/`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'OCR extraction failed');
+    }
+
+    return response.json();
+  }
+
+  static async ocrAndProcess(imageFile: File, title?: string): Promise<OCRProcessResult> {
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    if (title) {
+      formData.append('title', title);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/nlp/documents/ocr_and_process/`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'OCR processing failed');
+    }
+
+    return response.json();
+  }
+
+  static async batchOCR(imageFiles: File[]): Promise<BatchOCRResult> {
+    const token = this.getToken();
+    const formData = new FormData();
+    imageFiles.forEach((file) => {
+      formData.append('images', file);
+    });
+
+    const response = await fetch(`${API_BASE_URL}/nlp/documents/batch_ocr/`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Batch OCR failed');
+    }
+
+    return response.json();
+  }
+
+  // ==================== EXISTING ENDPOINTS ====================
+  
   static async getProfile(): Promise<UserProfile> {
     return this.request('/auth/profile/');
   }
@@ -115,14 +258,13 @@ export class ApiService {
   static async logout(refreshToken: string): Promise<any> {
     return fetch(`${API_BASE_URL}/auth/logout/`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ refresh: refreshToken }),
     });
   }
 
-  // ==================== Document Endpoints ====================
   static async uploadDocument(title: string, text: string): Promise<Document> {
     return this.request('/nlp/documents/', {
       method: 'POST',
@@ -151,13 +293,11 @@ export class ApiService {
       method: 'POST',
       body: JSON.stringify({ text }),
     });
-    console.log('Quick extract response:', response);
-    
+
     if (response.success && response.extracted_data) {
       return response.extracted_data;
     }
-    
-    // Fallback if structure is different
+
     return response;
   }
 
@@ -205,10 +345,10 @@ export class ApiService {
     await this.request(`/nlp/documents/${documentId}/`, {
       method: 'DELETE',
     });
-    // Returns void, no need to return anything
   }
 }
 
+// Export convenience functions
 export const uploadDocument = (title: string, text: string) => ApiService.uploadDocument(title, text);
 export const getDocuments = () => ApiService.getDocuments();
 export const getDocument = (id: number) => ApiService.getDocument(id);
@@ -221,3 +361,8 @@ export const reprocessDocument = (documentId: number) => ApiService.reprocessDoc
 export const getFeedbackStatistics = () => ApiService.getFeedbackStatistics();
 export const updateStructuredData = (documentId: number, data: any) => ApiService.updateStructuredData(documentId, data);
 export const deleteDocument = (documentId: number) => ApiService.deleteDocument(documentId);
+
+// Export new OCR functions
+export const ocrExtract = (imageFile: File, preprocess?: boolean) => ApiService.ocrExtract(imageFile, preprocess);
+export const ocrAndProcess = (imageFile: File, title?: string) => ApiService.ocrAndProcess(imageFile, title);
+export const batchOCR = (imageFiles: File[]) => ApiService.batchOCR(imageFiles);

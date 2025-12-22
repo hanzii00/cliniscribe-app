@@ -1,8 +1,8 @@
-// app/page.tsx
+// app/page.tsx - Complete with OCR support
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, FileText, Upload, CheckCircle, XCircle, BarChart3, X } from 'lucide-react';
+import { AlertCircle, FileText, Upload, CheckCircle, BarChart3, X } from 'lucide-react';
 import QuickExtract from '@/components/QuickExtract';
 import Documents from '@/components/Documents';
 import Statistics from '@/components/Statistics';
@@ -10,26 +10,43 @@ import UserMenu from '@/components/UserMenu';
 import { ApiService, Document, ExtractedData } from '@/lib/api';
 
 // Toast Component
-const Toast = ({ message, type, onClose }: { message: string; type: 'error' | 'success'; onClose: () => void }) => {
+const Toast = ({ message, type, onClose }: { message: string; type: 'error' | 'success' | 'info'; onClose: () => void }) => {
+  const [isVisible, setIsVisible] = React.useState(false);
+
   useEffect(() => {
+    // Trigger animation after mount
+    setIsVisible(true);
+    
     const timer = setTimeout(() => {
       onClose();
     }, 5000);
     return () => clearTimeout(timer);
   }, [onClose]);
 
-  const styles = type === 'error' 
-    ? 'bg-red-50 border-red-200 text-red-900'
-    : 'bg-green-50 border-green-200 text-green-900';
+  const styles = 
+    type === 'error' 
+      ? 'bg-red-50 border-red-200 text-red-900'
+      : type === 'success'
+      ? 'bg-green-50 border-green-200 text-green-900'
+      : 'bg-blue-50 border-blue-200 text-blue-900';
   
   const Icon = type === 'error' ? AlertCircle : CheckCircle;
-  const iconColor = type === 'error' ? 'text-red-600' : 'text-green-600';
+  const iconColor = 
+    type === 'error' 
+      ? 'text-red-600' 
+      : type === 'success'
+      ? 'text-green-600'
+      : 'text-blue-600';
 
   return (
-    <div className={`${styles} border rounded-lg p-4 shadow-lg flex items-start gap-3 min-w-[320px] max-w-md animate-slide-in`}>
+    <div className={`${styles} border rounded-lg p-4 shadow-lg flex items-start gap-3 min-w-[320px] max-w-md transition-all duration-300 ease-out ${
+      isVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+    }`}>
       <Icon className={`w-5 h-5 ${iconColor} flex-shrink-0 mt-0.5`} />
       <div className="flex-1">
-        <h3 className="font-medium">{type === 'error' ? 'Error' : 'Success'}</h3>
+        <h3 className="font-medium">
+          {type === 'error' ? 'Error' : type === 'success' ? 'Success' : 'Info'}
+        </h3>
         <p className="text-sm mt-0.5">{message}</p>
       </div>
       <button onClick={onClose} className={`${iconColor} hover:opacity-70 transition`}>
@@ -39,8 +56,15 @@ const Toast = ({ message, type, onClose }: { message: string; type: 'error' | 's
   );
 };
 
+
 // Toast Container Component
-const ToastContainer = ({ toasts, onRemove }: { toasts: Array<{ id: number; message: string; type: 'error' | 'success' }>; onRemove: (id: number) => void }) => {
+const ToastContainer = ({ 
+  toasts, 
+  onRemove 
+}: { 
+  toasts: Array<{ id: number; message: string; type: 'error' | 'success' | 'info' }>; 
+  onRemove: (id: number) => void 
+}) => {
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-3">
       {toasts.map((toast) => (
@@ -61,11 +85,11 @@ export default function N2SDCPage() {
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'error' | 'success' }>>([]);
+  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'error' | 'success' | 'info' }>>([]);
   const [toastIdCounter, setToastIdCounter] = useState(0);
 
   // Toast helpers
-  const showToast = (message: string, type: 'error' | 'success') => {
+  const showToast = (message: string, type: 'error' | 'success' | 'info') => {
     const id = toastIdCounter;
     setToastIdCounter(prev => prev + 1);
     setToasts(prev => [...prev, { id, message, type }]);
@@ -77,6 +101,7 @@ export default function N2SDCPage() {
 
   const showError = (message: string) => showToast(message, 'error');
   const showSuccess = (message: string) => showToast(message, 'success');
+  const showInfo = (message: string) => showToast(message, 'info');
 
   // ------------------ API Handlers ------------------
   const loadDocuments = async () => {
@@ -89,6 +114,10 @@ export default function N2SDCPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefreshDocuments = async () => {
+    await loadDocuments();
   };
 
   const handleQuickExtract = async (text: string) => {
@@ -352,6 +381,7 @@ export default function N2SDCPage() {
             extractedData={extractedData}
             loading={loading}
             onSaveAsDocument={handleSaveAsDocument}
+            showToast={showToast}
           />
         )}
         {currentView === 'documents' && (
@@ -366,11 +396,12 @@ export default function N2SDCPage() {
             onReprocess={handleReprocess}
             onDelete={handleDeleteDocument}
             onCorrectExtraction={handleCorrectExtraction}
+            onRefreshDocuments={handleRefreshDocuments}
+            showToast={showToast}
           />
         )}
         {currentView === 'statistics' && <Statistics />}
       </main>
-
     </div>
   );
 }
