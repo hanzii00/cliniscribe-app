@@ -87,6 +87,33 @@ export default function AuthPage() {
             </>
           )}
         </div>
+
+        {/* Footer */}
+        <p className="text-center text-sm text-gray-600 mt-6">
+          {activeTab === 'login' ? (
+            <>
+              Don't have an account?{' '}
+              <button
+                type="button"
+                onClick={() => setActiveTab('register')}
+                className="text-indigo-600 hover:underline font-medium"
+              >
+                Sign up
+              </button>
+            </>
+          ) : (
+            <>
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={() => setActiveTab('login')}
+                className="text-indigo-600 hover:underline font-medium"
+              >
+                Sign in
+              </button>
+            </>
+          )}
+        </p>
       </div>
 
       <div className="w-1/2 h-full flex items-center justify-center p-7">
